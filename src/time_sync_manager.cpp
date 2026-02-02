@@ -1,5 +1,6 @@
 #include "time_sync_manager.h"
 
+#include <esp_matter.h>
 #include <esp_matter_cluster.h>
 #include <esp_matter_endpoint.h>
 #include <system/SystemClock.h>
@@ -28,7 +29,7 @@ void time_sync_init(void)
 
     esp_matter::cluster::time_synchronization::config_t cfg;
     esp_matter::cluster_t *cluster =
-        esp_matter::cluster::time_synchronization::create(root, &cfg, CLUSTER_FLAG_SERVER);
+        esp_matter::cluster::time_synchronization::create(root, &cfg, esp_matter::CLUSTER_FLAG_SERVER);
     s_time_sync_cluster_ready = (cluster != nullptr);
 }
 
