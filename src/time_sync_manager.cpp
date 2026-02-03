@@ -1,6 +1,7 @@
 #include "time_sync_manager.h"
 
 #include <esp_matter.h>
+#include <esp_log.h>
 #include <esp_matter_cluster.h>
 #include <esp_matter_endpoint.h>
 #include <app/server/Server.h>
@@ -10,8 +11,8 @@
 static bool s_time_sync_ready = false;
 static bool s_time_sync_cluster_ready = false;
 static time_sync_ready_cb_t s_ready_cb = nullptr;
-static bool s_tried_last_known_good = false;
 
+static const char *TAG = "time_sync";
 static void try_init_cluster()
 {
     if (s_time_sync_cluster_ready) return;
@@ -25,6 +26,9 @@ static void try_init_cluster()
     esp_matter::cluster_t *cluster =
         esp_matter::cluster::time_synchronization::create(root, &cfg, esp_matter::CLUSTER_FLAG_SERVER);
     s_time_sync_cluster_ready = (cluster != nullptr);
+    if (s_time_sync_cluster_ready) {
+        ESP_LOGI(TAG, "Time Synchronization cluster created on endpoint 0");
+    }
 }
 
 static bool get_utc_seconds(int64_t &out_sec)
@@ -42,27 +46,9 @@ static bool is_plausible_time(int64_t utc_sec)
     return utc_sec >= 1609459200; // 2021-01-01T00:00:00Z
 }
 
-static bool try_sync_from_last_known_good()
-{
-    chip::System::Clock::Seconds32 lkg;
-    if (chip::Server::GetInstance().GetFabricTable().GetLastKnownGoodChipEpochTime(lkg) != CHIP_NO_ERROR) {
-        return false;
-    }
-
-    uint64_t chip_epoch_us = static_cast<uint64_t>(lkg.count()) * chip::kMicrosecondsPerSecond;
-    uint64_t unix_epoch_us = 0;
-    if (!chip::ChipEpochToUnixEpochMicros(chip_epoch_us, unix_epoch_us)) {
-        return false;
-    }
-
-    return chip::System::SystemClock().SetClock_RealTime(
-               chip::System::Clock::Microseconds64(unix_epoch_us)) == CHIP_NO_ERROR;
-}
-
 void time_sync_init(void)
 {
     try_init_cluster();
-    s_tried_last_known_good = false;
 }
 
 void time_sync_poll(void)
@@ -74,12 +60,6 @@ void time_sync_poll(void)
 
     int64_t utc_sec = 0;
     bool have_time = get_utc_seconds(utc_sec) && is_plausible_time(utc_sec);
-    if (!have_time && !s_tried_last_known_good) {
-        s_tried_last_known_good = true;
-        if (try_sync_from_last_known_good()) {
-            have_time = get_utc_seconds(utc_sec) && is_plausible_time(utc_sec);
-        }
-    }
 
     if (have_time) {
         s_time_sync_ready = true;
